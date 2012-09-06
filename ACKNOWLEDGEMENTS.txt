@@ -1,0 +1,49 @@
+Copyright 2012, City University of New York. All Rights Reserved.
+
+Quantative Image Restoration Software for MODIS band 6.
+
+This software was developed at City College, City University
+of New York.  It was developed by faculty and students
+working as part of The Computational Scince of Data
+Intensive Remote Scensing Group (CS:dirs) at NOAA-CREST, the
+NOAA Cooperative Remote Scensing Science and Technolgy
+Center.
+
+CS:dirs homepage: http://csdirs.ccny.cuny.edu/
+Directed by Irina Gladkova and Michael Grossberg
+
+Algorithm Design: 
+    Irina Gladkova and Michael Grossberg
+
+Consultant:
+    Peter Romanov
+
+Senior Software Developer: 
+    Fazlul Shahriar
+
+Software Developers: 
+    George Bonev
+    Andrew Cole
+    Carl Chinatomby
+
+Data Consultant:
+    Paul Alabi
+
+The software was in part supported and monitored by 
+National Oceanic and Atmospheric Administration (NOAA) 
+under CREST Grant #  NA11SEC4810004 and 
+by NOAA/NESDIS STAR Grant No. #DG133E07CQ0077
+
+We acknowlege and are grateful for the help and support of
+Alfred Powell and Ingrid Guch of NOAA
+and Dorothy Hall and George Riggs of NASA
+
+
+Quantitative Restoration for MODIS Band 6 on Aqua
+Gladkova, I.; Grossberg, M.D.; Shahriar, F.; Bonev, G.; Romanov, P.
+Geoscience and Remote Sensing, IEEE Transactions on 
+Volume:	50, Issue: 6	
+Digital Object Identifier: 10.1109/TGRS.2011.2173499 
+Publication Year: 2012 , Page(s): 2409	- 2416 
+
+See accompanying LICENSE.txt file for use and distribution.
