@@ -13,8 +13,8 @@ Band5Fix = 'interp'
 WinSize = 5
 FillWinSize = 21
 NDetectors = 20
-BadDetectors = np.array([1, 4, 5, 9, 11, 12, 13, 14, 15, 17, 18, 19])
-GoodDetectors = np.array([_b for _b in range(NDetectors) if not _b in BadDetectors])
+B6BadDetectors = np.array([1, 4, 5, 9, 11, 12, 13, 14, 15, 17, 18, 19])
+BadDetectors = [B6BadDetectors, None, None, None, [19], None]
 
 def check_globals():
     """Verify that global variable parameters are correct.
@@ -22,8 +22,8 @@ def check_globals():
     assert np.all((1 <= Bands) & (Bands <= 36))
     assert WinSize >= 3
     assert FillWinSize >= 1
-    assert np.all((0 <= BadDetectors) & (BadDetectors < NDetectors))
-    assert np.all((0 <= GoodDetectors) & (GoodDetectors < NDetectors))
+    assert np.all((0 <= B6BadDetectors) & (B6BadDetectors < NDetectors))
+    assert len(Bands) == len(BadDetectors)
 
 def modtypeof(filename):
     """Returns the type of modis granule based on the filename.
@@ -213,13 +213,19 @@ def read_mod02HKM(path):
         img = b.read()
         if np.any(img.mask):
             raise Exception("flags exist in band %d of granule %s" % (band, os.path.basename(path)))
-        img = b.fill_invalid(
-            b.destripe(img.data.astype('f8'), nbins=NDestripeBins),
+        img = b.destripe(img.data.astype('f8'), nbins=NDestripeBins, skipdet=BadDetectors[i])
+        if BadDetectors[i] is None:
+            fillmask = np.ones(img.shape, dtype='bool')
+        else:
+            fillmask = ~get_detector_mask(img.shape, BadDetectors[i])
+        _img = b.fill_invalid(
+            img[fillmask].reshape((-1, img.shape[1])),
             winsize=FillWinSize,
             maxinvalid=0.5,
             pad=True,
         )
-        n = np.sum(b.is_invalid(img))
+        img[fillmask] = _img.ravel()
+        n = np.sum(b.is_invalid(img[fillmask]))
         if n > 0:
             raise Exception("%d values out of valid range in band %d" % (n, band))
         validrange[i,:] = b.valid_range()
@@ -227,7 +233,7 @@ def read_mod02HKM(path):
 
     return np.dstack(data), validrange
 
-def fix_band5(data):
+def fix_band5(data, baddets):
     """Fix band 5 of in data--intended for Terra granules.
 
     Parameters
@@ -247,8 +253,7 @@ def fix_band5(data):
         ind = np.where(Bands != 5)[0]
         data = data[:,:,ind]
     elif Band5Fix == 'interp':
-        baddets = np.array([3], dtype='i')
-        gooddets = np.array(range(0, 3)+range(4, 20), dtype='i')
+        gooddets = [d for d in xrange(NDetectors) if d not in baddets]
         ind = np.where(Bands == 5)[0][0]
         data[:,:,ind] = interp_nasa(data[:,:,ind], gooddets, baddets)
     else:
@@ -321,10 +326,12 @@ def modis_qir(datapath):
     check_globals()
     data, validrange = read_mod02HKM(datapath)
     if modtypeof(datapath) == 'Terra':
-        data = fix_band5(data)
+        data = fix_band5(data, baddets=[3])
+    else:
+        data = fix_band5(data, baddets=[19])
     print "data shape:", data.shape, data.dtype
     print "WinSize =", WinSize
-    badmask = get_detector_mask(data[:,:,0].shape, BadDetectors)
+    badmask = get_detector_mask(data[:,:,0].shape, B6BadDetectors)
     return modis_qir_masked(data, validrange, badmask)
 
 def modis_qir_masked(data, validrange, badmask):
@@ -402,8 +409,10 @@ def modis_qir_masked(data, validrange, badmask):
         min(validrange[0,1], np.max(gooddata)+0.05*std),
     ])
     print "Valid range after:", vrange
-    restored, _ = fillinvalid(restored, validrange=vrange,
+    _restored, _ = fillinvalid(restored[goodmask].reshape((-1, restored.shape[1])),
+        validrange=vrange,
         winsize=FillWinSize, maxinvalid=0.5, pad=True)
+    restored[goodmask] = _restored.ravel()
 
     # Not all invalid pixels may be filled, so return a masked array
     return np.ma.masked_outside(restored, vrange[0], vrange[1])

@@ -77,7 +77,7 @@ _BAND_VARNAMES = {
 }
 
 
-def destripe(img, resolution, valid_range, nbins=100):
+def destripe(img, resolution, valid_range, nbins=100, skipdet=None):
     """Destripe a modis band image using histogram matching.
 
     See also :func:`Level1BBand.destripe`, which should be used
@@ -93,6 +93,8 @@ def destripe(img, resolution, valid_range, nbins=100):
         Minimum and maximum valid value for the band.
     nbins : int, optional
         Bin size for the empirical CDF.
+    skipdet : list
+        List of detectors that shouldn't be destriped.
 
     Returns
     -------
@@ -106,8 +108,12 @@ def destripe(img, resolution, valid_range, nbins=100):
 
     destriped = img.copy()
     lastrow = (img.shape[0]//nsens)*nsens
-    goodsen = 0
-    strippedsens = range(1, nsens)  # 0 is a good sensor
+    strippedsens = range(nsens)
+    if skipdet is not None:
+        strippedsens = [s for s in xrange(nsens) if s not in skipdet]
+
+    # use first detector/sensor as reference
+    goodsen = strippedsens.pop(0)
 
     D1 = img[goodsen:lastrow:nsens, :].ravel()
     D1_valid = D1[(valid_range[0] < D1) & (D1 < valid_range[1])]
@@ -389,13 +395,13 @@ class Level1BBand(Level1BVariable):
             return self.convert(vr, 'raw', self._param)
         return vr
 
-    def destripe(self, img, nbins=100):
+    def destripe(self, img, nbins=100, skipdet=None):
         """A wrapper around :func:`destripe`.
 
         The only difference is that resolution, and valid_range
         arguments is not needed.
         """
-        return destripe(img, self._level1b.resolution(), self.valid_range(), nbins=nbins)
+        return destripe(img, self._level1b.resolution(), self.valid_range(), nbins=nbins, skipdet=skipdet)
 
     def read(self, start=None, count=None, clean=False):
         """Read band data from file.
