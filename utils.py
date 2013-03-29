@@ -112,6 +112,7 @@ def _get4widths(width=None, winsize=None):
         raise ValueError("negative value in width=%s" % width)
     return width
 
+# TODO: replace with numpy.pad (available in numpy >=1.7.0)
 def pad_image(img, width=None, winsize=None):
     """Return the image resulting from padding width amount of pixels on
     each sides of the image img.  The padded values are mirror image with

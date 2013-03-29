@@ -5,7 +5,7 @@ import os
 import os.path
 
 import modis
-from utils import pad_image, unpad_image, fillinvalid
+from utils import unpad_image, fillinvalid
 
 Bands = np.array([6, 1, 3, 4, 5, 7], dtype='i') # Bands[0] will be restored
 NDestripeBins = 100
@@ -269,7 +269,7 @@ def argslidingwins(datashape, winsize, shiftsize):
         Shape of image.
     winsize : 2-tuple
         Shape of window.
-    shiftsize : 2-typle.
+    shiftsize : 2-tuple.
         Row and column shift sizes.
 
     Returns
@@ -294,6 +294,51 @@ def argslidingwins(datashape, winsize, shiftsize):
                 cl = lastcol
             args.append((r0, c0, rl, cl))
     return args
+
+def padded_crop(img, rect):
+    """Crop from an image and then pad the cropped image using
+    the original image if possible, otherwise using the reflection
+    of crop along the edge.
+
+    Parameters
+    ----------
+    img : 2d or 3d ndarray
+        Image to crop from.
+    rect : 4-tuple of int
+        Defines the rectangle of the crop before padding:
+        (start row, start column, end row, end column).
+
+    Returns
+    -------
+    crop : 2d or 3d ndarray
+        Cropped image.
+    """
+    rs, cs, re, ce = rect
+    hw = WinSize//2
+    rs1, re1 = max(rs-hw, 0), min(re+hw, img.shape[0])
+    cs1, ce1 = max(cs-hw, 0), min(ce+hw, img.shape[1])
+    crop = img[rs1:re1, cs1:ce1]
+    drs, dre = hw-(rs-rs1), hw-(re1-re)
+    dcs, dce = hw-(cs-cs1), hw-(ce1-ce)
+
+    v = []
+    if drs > 0:
+        v.append(crop[1:1+drs, :][::-1, :])
+    v.append(crop)
+    if dre > 0:
+        v.append(crop[-dre-1:-1, :][::-1, :])
+    if len(v) > 1:
+        crop = np.row_stack(v)
+
+    v = []
+    if dcs > 0:
+        v.append(crop[:, 1:1+dcs][:, ::-1])
+    v.append(crop)
+    if dce > 0:
+        v.append(crop[:, -dce-1:-1][:, ::-1])
+    if len(v) > 1:
+        crop = np.column_stack(v)
+    return crop
 
 def set_pad(img, value):
     """Set image pad value.
@@ -353,10 +398,6 @@ def modis_qir_masked(data, validrange, badmask):
         Image of QIR restored band 6 radiances.
     """
     origband = data[:,:,0].copy()
-    data = pad_image(data, width=WinSize//2)
-    print "After pad, data shape:", data.shape
-
-    badmask = pad_image(badmask, width=WinSize//2)
     goodmask = ~badmask
     validmask = np.all((validrange[:,0] <= data) & (data <= validrange[:,1]), axis=2)
 
@@ -367,17 +408,17 @@ def modis_qir_masked(data, validrange, badmask):
     patchcount = np.zeros_like(data[:,:,0])
 
     patches = argslidingwins(data.shape[:2], (10*NDetectors, 200), (5*NDetectors, 100))
-    hw = WinSize//2
     i = 0
-    for r0, c0, r, c in patches:
+    for rect in patches:
+        r0, c0, r, c = rect
         print "patch %4d/%d: (%3d, %3d) @ (%4d, %4d)" % (
                         i+1, len(patches), r-r0, c-c0, r0, c0)
-        crop = data[r0:r, c0:c, :]
-        gmask = np.copy(goodmask[r0:r, c0:c])
+        crop = padded_crop(data, rect)
+        gmask = np.copy(padded_crop(goodmask, rect))
         set_pad(gmask, False)
-        bmask = np.copy(badmask[r0:r, c0:c])
+        bmask = np.copy(padded_crop(badmask, rect))
         set_pad(bmask, False)
-        vmask = validmask[r0:r, c0:c]
+        vmask = padded_crop(validmask, rect)
 
         # update gmask
         gX, gY = get_mask_wins(crop, gmask)
@@ -390,18 +431,14 @@ def modis_qir_masked(data, validrange, badmask):
         crop[bmask, 0] = ls.predict(bX)
 
         crop = unpad_image(crop, width=WinSize//2)
-        restored[r0+hw:r-hw, c0+hw:c-hw] += crop[:,:,0]
-        patchcount[r0+hw:r-hw, c0+hw:c-hw] += np.ones_like(crop[:,:,0])
+        restored[r0:r, c0:c] += crop[:,:,0]
+        patchcount[r0:r, c0:c] += np.ones_like(crop[:,:,0])
         i += 1
 
-    data = unpad_image(data, width=WinSize//2)
-    restored = unpad_image(restored, width=WinSize//2)
-    patchcount = unpad_image(patchcount, width=WinSize//2)
     restored /= patchcount.astype('f8')
 
     # Handle values out of valid range in restored image
     print "Valid range before:", validrange[0,:]
-    goodmask = unpad_image(goodmask, width=WinSize//2)
     gooddata = origband[goodmask]
     std = np.std(gooddata)
     vrange = np.array([
