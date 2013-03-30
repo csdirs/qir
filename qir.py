@@ -206,9 +206,9 @@ def read_mod02HKM(path):
         Validrange[:,0] is the minimum valid value and
         validrange[:,1] is the maximum valid value.
     """
-    data = []
-    validrange = np.zeros((len(Bands), 2))
     hdf = modis.Level1B(path)
+    data = np.zeros(hdf.raw(6).shape + (len(Bands),))
+    validrange = np.zeros((len(Bands), 2))
     for i, band in enumerate(Bands):
         b = hdf.radiance(band)
         img = b.read()
@@ -230,9 +230,9 @@ def read_mod02HKM(path):
         if n > 0:
             raise Exception("%d values out of valid range in band %d" % (n, band))
         validrange[i,:] = b.valid_range()
-        data.append(img)
+        data[:,:,i] = img
 
-    return np.dstack(data), validrange
+    return data, validrange
 
 def fix_band5(data, baddets):
     """Fix band 5 of in data--intended for Terra granules.
