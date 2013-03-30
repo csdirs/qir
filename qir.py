@@ -293,7 +293,7 @@ def argslidingwins(datashape, winsize, shiftsize):
                 c0 = lastcol-ncol
                 cl = lastcol
             args.append((r0, c0, rl, cl))
-    return args
+    return sorted(set(args))
 
 def padded_crop(img, rect):
     """Crop from an image and then pad the cropped image using
