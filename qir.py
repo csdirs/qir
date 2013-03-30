@@ -11,6 +11,7 @@ Bands = np.array([6, 1, 3, 4, 5, 7], dtype='i') # Bands[0] will be restored
 NDestripeBins = 100
 Band5Fix = 'interp'
 WinSize = 5
+PadSize = WinSize//2
 FillWinSize = 21
 NDetectors = 20
 B6BadDetectors = np.array([1, 4, 5, 9, 11, 12, 13, 14, 15, 17, 18, 19])
@@ -126,8 +127,8 @@ def get_mask_wins(data, mask):
     train = np.NaN + np.zeros((len(target), WinSize*WinSize*(len(Bands)-1)))
 
     k = 0
-    for roff in xrange(-WinSize//2+1, WinSize//2+1):
-        for coff in xrange(-WinSize//2+1, WinSize//2+1):
+    for roff in xrange(-PadSize, PadSize+1):
+        for coff in xrange(-PadSize, PadSize+1):
             train[:, k:k+(len(Bands)-1)] = data[rows+roff, cols+coff, 1:]
             k += len(Bands)-1
     return train, target
@@ -281,18 +282,17 @@ def argslidingwins(datashape, winsize, shiftsize):
     nrow, ncol = winsize
 
     args = []
-    for row in xrange(0, lastrow, shiftsize[0]):
-        for col in xrange(0, lastcol, shiftsize[1]):
-            r0, c0 = row, col
-            rl, cl = r0+nrow, c0+ncol
-            if rl > lastrow:
+    for rs in xrange(0, lastrow, shiftsize[0]):
+        for cs in xrange(0, lastcol, shiftsize[1]):
+            re, ce = rs+nrow, cs+ncol
+            if re > lastrow:
                 # first row must be detector aligned
-                r0 = (lastrow-nrow)//NDetectors*NDetectors
-                rl = lastrow
-            if cl > lastcol:
-                c0 = lastcol-ncol
-                cl = lastcol
-            args.append((r0, c0, rl, cl))
+                rs = (lastrow-nrow)//NDetectors*NDetectors
+                re = lastrow
+            if ce > lastcol:
+                cs = lastcol-ncol
+                ce = lastcol
+            args.append((rs, cs, re, ce))
     return sorted(set(args))
 
 def padded_crop(img, rect):
@@ -314,12 +314,11 @@ def padded_crop(img, rect):
         Cropped image.
     """
     rs, cs, re, ce = rect
-    hw = WinSize//2
-    rs1, re1 = max(rs-hw, 0), min(re+hw, img.shape[0])
-    cs1, ce1 = max(cs-hw, 0), min(ce+hw, img.shape[1])
+    rs1, re1 = max(rs-PadSize, 0), min(re+PadSize, img.shape[0])
+    cs1, ce1 = max(cs-PadSize, 0), min(ce+PadSize, img.shape[1])
     crop = img[rs1:re1, cs1:ce1]
-    drs, dre = hw-(rs-rs1), hw-(re1-re)
-    dcs, dce = hw-(cs-cs1), hw-(ce1-ce)
+    drs, dre = PadSize-(rs-rs1), PadSize-(re1-re)
+    dcs, dce = PadSize-(cs-cs1), PadSize-(ce1-ce)
 
     v = []
     if drs > 0:
@@ -350,10 +349,10 @@ def set_pad(img, value):
     value : float
         Value to be assigned to padded area.
     """
-    img[:WinSize//2, :] = value
-    img[-WinSize//2+1:, :] = value
-    img[:, :WinSize//2] = value
-    img[:, -WinSize//2+1:] = value
+    img[:PadSize, :] = value
+    img[-PadSize:, :] = value
+    img[:, :PadSize] = value
+    img[:, -PadSize:] = value
 
 def modis_qir(datapath):
     """Quatitative image restoration (QIR) of MODIS band 6.
@@ -410,9 +409,9 @@ def modis_qir_masked(data, validrange, badmask):
     patches = argslidingwins(data.shape[:2], (10*NDetectors, 200), (5*NDetectors, 100))
     i = 0
     for rect in patches:
-        r0, c0, r, c = rect
+        rs, cs, re, ce = rect
         print "patch %4d/%d: (%3d, %3d) @ (%4d, %4d)" % (
-                        i+1, len(patches), r-r0, c-c0, r0, c0)
+                        i+1, len(patches), re-rs, ce-cs, rs, cs)
         crop = padded_crop(data, rect)
         gmask = np.copy(padded_crop(goodmask, rect))
         set_pad(gmask, False)
@@ -430,9 +429,9 @@ def modis_qir_masked(data, validrange, badmask):
         ls = LeastSquare(gX, gY)
         crop[bmask, 0] = ls.predict(bX)
 
-        crop = unpad_image(crop, width=WinSize//2)
-        restored[r0:r, c0:c] += crop[:,:,0]
-        patchcount[r0:r, c0:c] += np.ones_like(crop[:,:,0])
+        crop = unpad_image(crop, width=PadSize)
+        restored[rs:re, cs:ce] += crop[:,:,0]
+        patchcount[rs:re, cs:ce] += np.ones_like(crop[:,:,0])
         i += 1
 
     restored /= patchcount.astype('f8')
