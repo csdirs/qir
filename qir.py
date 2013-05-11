@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 
 import numpy as np
-import os
-import os.path
 from scipy.ndimage.filters import convolve
 
 import modis
@@ -10,7 +8,6 @@ from utils import unpad_image, fillinvalid
 
 Bands = np.array([6, 1, 3, 4, 5, 7], dtype='i') # Bands[0] will be restored
 NDestripeBins = 100
-Band5Fix = 'interp'
 WinSize = 5
 PadSize = WinSize//2
 FillWinSize = 21
@@ -23,27 +20,7 @@ def check_globals():
     assert WinSize >= 3
     assert FillWinSize >= 1
 
-def modtypeof(filename):
-    """Returns the type of modis granule based on the filename.
-
-    Parameters
-    ----------
-    filename : str
-        MODIS granule filename.
-
-    Returns
-    -------
-    modtype : str
-        Either "Aqua" or "Terra".
-    """
-    s = os.path.basename(filename)[:5]
-    if s == "MOD02":
-        return "Terra"
-    elif s == "MYD02":
-        return "Aqua"
-    raise ValueError("bad granule name %s" % filename)
-
-def interp_nasa(img, gooddets, baddets):
+def interp_nasa(img, baddets):
     """Fill in lines from bad detectors by linear interpolation
     of neighboring lines from good detectors.
 
@@ -51,8 +28,6 @@ def interp_nasa(img, gooddets, baddets):
     ----------
     img : 2d ndarray
         Band image. Modified in-place.
-    goodets : 1d ndarray
-        Good detectors.
     baddets : 1d ndarray
         Bad detectors.
 
@@ -61,6 +36,8 @@ def interp_nasa(img, gooddets, baddets):
     img : 2d ndarray
         Input img modified in-place.
     """
+    gooddets = [d for d in xrange(NDetectors) if d not in baddets]
+
     left = -2*NDetectors + np.zeros(NDetectors)
     right = -2*NDetectors + np.zeros(NDetectors)
     for b in baddets:
@@ -256,36 +233,11 @@ def read_mod02HKM(path):
             pad=True,
         )
         img[fillmask] = _img.ravel()
+        if band != 6 and len(dd[i]) > 0:
+            img = interp_nasa(img, dd[i])
         data[:,:,i] = img
 
     return data, validrange, imgshape, dayind, dd
-
-def fix_band5(data, baddets):
-    """Fix band 5 of in data--intended for Terra granules.
-
-    Parameters
-    ----------
-    data : 3d ndarray
-        Data from all bands. It is modified in-place.
-
-    Returns
-    -------
-    data : 3d ndarray
-        Data with band 5 fixed if present.
-    """
-    if not np.any(Bands == 5):
-        return data
-
-    if Band5Fix == 'remove':
-        ind = np.where(Bands != 5)[0]
-        data = data[:,:,ind]
-    elif Band5Fix == 'interp':
-        gooddets = [d for d in xrange(NDetectors) if d not in baddets]
-        ind = np.where(Bands == 5)[0][0]
-        data[:,:,ind] = interp_nasa(data[:,:,ind], gooddets, baddets)
-    else:
-        raise ValueError("Band5Fix == %s unknown" % Band5Fix)
-    return data
 
 def argslidingwins(datashape, winsize, shiftsize):
     """Get location of sliding windows.
@@ -395,10 +347,6 @@ def modis_qir(datapath):
     """
     check_globals()
     data, validrange, imgshape, dayind, dd = read_mod02HKM(datapath)
-    if modtypeof(datapath) == 'Terra':
-        data = fix_band5(data, baddets=[3])
-    else:
-        data = fix_band5(data, baddets=[19])
     print "data shape:", data.shape, data.dtype
     print "WinSize =", WinSize
     badmask = get_detector_mask(data[:,:,0].shape, dd[0])
