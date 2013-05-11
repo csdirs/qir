@@ -14,6 +14,7 @@ The code has been tested under at least this configuration:
 	Python 2.7.2
 	Numpy 1.6.1
 	Pyhdf 0.8.3
+	Scipy 0.12.0
 
 List of files:
 	run_qir.py - main executable script
