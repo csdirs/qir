@@ -3,6 +3,7 @@
 import numpy as np
 import os
 import os.path
+from scipy.ndimage.filters import convolve
 
 import modis
 from utils import unpad_image, fillinvalid
@@ -14,8 +15,6 @@ WinSize = 5
 PadSize = WinSize//2
 FillWinSize = 21
 NDetectors = 20
-B6BadDetectors = np.array([1, 4, 5, 9, 11, 12, 13, 14, 15, 17, 18, 19])
-BadDetectors = [B6BadDetectors, None, None, None, [19], None]
 
 def check_globals():
     """Verify that global variable parameters are correct.
@@ -23,8 +22,6 @@ def check_globals():
     assert np.all((1 <= Bands) & (Bands <= 36))
     assert WinSize >= 3
     assert FillWinSize >= 1
-    assert np.all((0 <= B6BadDetectors) & (B6BadDetectors < NDetectors))
-    assert len(Bands) == len(BadDetectors)
 
 def modtypeof(filename):
     """Returns the type of modis granule based on the filename.
@@ -188,6 +185,19 @@ class LeastSquare(object):
         X = np.hstack((np.ones((X.shape[0],1)), X))
         return np.dot(X, self.alpha)
 
+def alignhigh(x):
+    return ((x+NDetectors-1)//NDetectors)*NDetectors
+
+def alignlow(x):
+    return (x//NDetectors)*NDetectors
+
+def mask_bbox(mask):
+    rind, cind = np.where(mask)
+    return np.s_[
+            alignhigh(np.min(rind)) : alignlow(np.max(rind)+1),
+            np.min(cind) : np.max(cind)+1,
+    ]
+
 def read_mod02HKM(path):
     """Read 500m resolution MODIS data. The image is destriped, and then
     values out of validrange are filled.
@@ -207,32 +217,48 @@ def read_mod02HKM(path):
         validrange[:,1] is the maximum valid value.
     """
     hdf = modis.Level1B(path)
-    data = np.zeros(hdf.raw(6).shape + (len(Bands),))
+    imgshape = hdf.raw(6).shape
+    data = np.zeros(imgshape + (len(Bands),))
+    nightmask = np.zeros(imgshape, dtype='bool')
     validrange = np.zeros((len(Bands), 2))
     for i, band in enumerate(Bands):
         b = hdf.radiance(band)
         img = b.read()
+        data[:,:,i] = img.data
         if np.any(img.mask):
-            raise Exception("flags exist in band %d of granule %s" % (band, os.path.basename(path)))
-        img = b.destripe(img.data.astype('f8'), nbins=NDestripeBins, skipdet=BadDetectors[i])
-        if BadDetectors[i] is None:
+            nightmask |= img.mask
+        validrange[i,:] = b.valid_range()
+
+    dayind = None
+    if np.any(nightmask):
+        dayind = mask_bbox(~nightmask)
+        print "Image shape:", imgshape
+        print "Day slice:", dayind
+        if np.any(nightmask[dayind]):
+            raise ValueError("non-contiguous day/night")
+        data = data[dayind]
+
+    deaddet = hdf.dead_detectors()
+    dd = [deaddet[str(b)] for b in Bands]
+
+    for i, band in enumerate(Bands):
+        b = hdf.radiance(band)
+        img = b.destripe(data[:,:,i], nbins=NDestripeBins, skipdet=dd[i])
+        if len(dd[i]) == 0:
             fillmask = np.ones(img.shape, dtype='bool')
         else:
-            fillmask = ~get_detector_mask(img.shape, BadDetectors[i])
-        _img = b.fill_invalid(
+            print "Band %s dead detectors: %s" % (band, dd[i])
+            fillmask = ~get_detector_mask(img.shape, dd[i])
+        _img, _ = b.fill_invalid(
             img[fillmask].reshape((-1, img.shape[1])),
             winsize=FillWinSize,
             maxinvalid=0.5,
             pad=True,
         )
         img[fillmask] = _img.ravel()
-        n = np.sum(b.is_invalid(img[fillmask]))
-        if n > 0:
-            raise Exception("%d values out of valid range in band %d" % (n, band))
-        validrange[i,:] = b.valid_range()
         data[:,:,i] = img
 
-    return data, validrange
+    return data, validrange, imgshape, dayind, dd
 
 def fix_band5(data, baddets):
     """Fix band 5 of in data--intended for Terra granules.
@@ -368,15 +394,22 @@ def modis_qir(datapath):
         Image of QIR restored band 6 radiances.
     """
     check_globals()
-    data, validrange = read_mod02HKM(datapath)
+    data, validrange, imgshape, dayind, dd = read_mod02HKM(datapath)
     if modtypeof(datapath) == 'Terra':
         data = fix_band5(data, baddets=[3])
     else:
         data = fix_band5(data, baddets=[19])
     print "data shape:", data.shape, data.dtype
     print "WinSize =", WinSize
-    badmask = get_detector_mask(data[:,:,0].shape, B6BadDetectors)
-    return modis_qir_masked(data, validrange, badmask)
+    badmask = get_detector_mask(data[:,:,0].shape, dd[0])
+
+    img = modis_qir_masked(data, validrange, badmask)
+    if dayind is not None:
+        fullimg = np.ma.zeros(imgshape)
+        fullimg.mask = True
+        fullimg[dayind] = img
+        img = fullimg
+    return img
 
 def modis_qir_masked(data, validrange, badmask):
     """
@@ -398,7 +431,16 @@ def modis_qir_masked(data, validrange, badmask):
     """
     origband = data[:,:,0].copy()
     goodmask = ~badmask
-    validmask = np.all((validrange[:,0] <= data) & (data <= validrange[:,1]), axis=2)
+
+    # Only train (predict) on windows that are centered
+    # on a good (dead) detector row,
+    # and don't have a pixel with invalid value.
+    validmask = (badmask | \
+        ((validrange[0,0] <= data[:,:,0]) & (data[:,:,0] <= validrange[0,1]))) & \
+        np.all((validrange[1:,0] <= data[:,:,1:]) & (data[:,:,1:] <= validrange[1:,1]), axis=2)
+    vwinmask = (convolve(~validmask, np.ones((WinSize, WinSize)), mode='mirror') == 0)
+    trainmask = ~badmask & vwinmask
+    predictmask = badmask & vwinmask
 
     # Important: make sure bad detector pixels are not input to the algorithm
     data[badmask,0] = np.NaN
@@ -413,21 +455,24 @@ def modis_qir_masked(data, validrange, badmask):
         print "patch %4d/%d: (%3d, %3d) @ (%4d, %4d)" % (
                         i+1, len(patches), re-rs, ce-cs, rs, cs)
         crop = padded_crop(data, rect)
-        gmask = np.copy(padded_crop(goodmask, rect))
-        set_pad(gmask, False)
-        bmask = np.copy(padded_crop(badmask, rect))
-        set_pad(bmask, False)
-        vmask = padded_crop(validmask, rect)
+        tmask = np.copy(padded_crop(trainmask, rect))
+        set_pad(tmask, False)
+        pmask = np.copy(padded_crop(predictmask, rect))
+        set_pad(pmask, False)
 
-        # update gmask
-        gX, gY = get_mask_wins(crop, gmask)
+        if np.sum(tmask) == 0 or np.sum(pmask) == 0:
+            continue
+        # update tmask
+        gX, gY = get_mask_wins(crop, tmask)
         ls = LeastSquare(gX, gY)
-        gmask[gmask] = vmask[gmask] & ls.smallresidue()
+        tmask[tmask] = ls.smallresidue()
+        if np.sum(tmask) == 0:
+            continue
 
-        gX, gY = get_mask_wins(crop, gmask)
-        bX, _ = get_mask_wins(crop, bmask)
+        gX, gY = get_mask_wins(crop, tmask)
+        bX, _ = get_mask_wins(crop, pmask)
         ls = LeastSquare(gX, gY)
-        crop[bmask, 0] = ls.predict(bX)
+        crop[pmask, 0] = ls.predict(bX)
 
         crop = unpad_image(crop, width=PadSize)
         restored[rs:re, cs:ce] += crop[:,:,0]
@@ -438,17 +483,21 @@ def modis_qir_masked(data, validrange, badmask):
 
     # Handle values out of valid range in restored image
     print "Valid range before:", validrange[0,:]
-    gooddata = origband[goodmask]
+    gooddata = origband[trainmask]
     std = np.std(gooddata)
     vrange = np.array([
         max(validrange[0,0], np.min(gooddata)-0.05*std),
         min(validrange[0,1], np.max(gooddata)+0.05*std),
     ])
     print "Valid range after:", vrange
+    # We don't trust predicted values that are out of valid range,
+    # so only fill pixels on good detector rows.
     _restored, _ = fillinvalid(restored[goodmask].reshape((-1, restored.shape[1])),
         validrange=vrange,
         winsize=FillWinSize, maxinvalid=0.5, pad=True)
     restored[goodmask] = _restored.ravel()
 
     # Not all invalid pixels may be filled, so return a masked array
-    return np.ma.masked_outside(restored, vrange[0], vrange[1])
+    return np.ma.masked_where(
+            np.isnan(restored) | (restored < vrange[0]) | (vrange[1] < restored),
+            restored)

@@ -237,11 +237,8 @@ class Level1BVariable(object):
         if np.ma.isMaskedArray(img) and np.any(img.mask):
             raise FillInvalidError("image contains %d _FillValue pixels" % np.sum(img.mask))
         invalid = self.is_invalid(img)
-        img, newinvalid = utils.fillinvalid(img, invalid=invalid,
+        return utils.fillinvalid(img, invalid=invalid,
             winsize=winsize, maxinvalid=maxinvalid, pad=pad)
-        if np.any(newinvalid):
-            raise FillInvalidError("failed to fill in %d of %d out of valid range pixels" % (newinvalid.sum(), invalid.sum()))
-        return img
 
     def read(self, start=None, count=None):
         """Read 2D data from file.
@@ -606,6 +603,20 @@ class Level1B(object):
             500  : _QKM_BAND_NAMES+_HKM_BAND_NAMES,
             250  : _QKM_BAND_NAMES,
         }[self.resolution()]
+
+    def dead_detectors(self):
+        # Band order: 1, 2, 3, ... 12, 13lo, 13hi, 14lo, 14hi, 15, ... , 36
+        # 250m bands with 40 detectors each: 1,2
+        # 500m bands with 20 detectors each: 3,4,5,6,7
+        # The rest are 1km bands with 10 detectors each.
+        ndet = np.array([40]*2 + [20]*5 + [10]*31)
+        ind = np.concatenate(([0], np.cumsum(ndet)))
+
+        bits = np.array(self._sd.SD.attributes()['Dead Detector List'])
+        dd = {}
+        for i, name in enumerate(self.band_names()):
+            dd[name], = np.where(bits[ind[i]:ind[i+1]] > 0)
+        return dd
 
     def band(self, bname, param):
         """Create an instance of :class:`Level1BBand`.
