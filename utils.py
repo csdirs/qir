@@ -68,7 +68,8 @@ def fillinvalid(img, validrange=None, invalid=None, winsize=21, maxinvalid=0.5, 
         raise ValueError("maxinvalid=%s must be in the range [0,1]" % maxinvalid)
 
     invalid = np.array(invalid, dtype='bool')
-    maxpad = int(winsize)//2
+    maxpad = min(int(winsize)//2, img.shape[0], img.shape[1])
+    winsize = None  # winsize is wrong if img is smaller than winsize
 
     if pad:
         img = pad_image(img, width=maxpad)

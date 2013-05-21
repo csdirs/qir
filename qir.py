@@ -396,7 +396,8 @@ def modis_qir_masked(data, validrange, badmask):
     restored = np.zeros_like(data[:,:,0])
     patchcount = np.zeros_like(data[:,:,0])
 
-    patches = argslidingwins(data.shape[:2], (10*NDetectors, 200), (5*NDetectors, 100))
+    patchsize = (min(10*NDetectors, data.shape[0]), min(10*NDetectors, data.shape[1]))
+    patches = argslidingwins(data.shape[:2], patchsize, (patchsize[0]//2, patchsize[1]//2))
     i = 0
     for rect in patches:
         rs, cs, re, ce = rect
