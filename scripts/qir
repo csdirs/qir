@@ -38,6 +38,8 @@ save the restored image at output.hdf.
         The default is the granule name with the prefix "QIR." added.""")
     parser.add_argument('--version', '-V', action='store_true',
         help="print version and exit.")
+    parser.add_argument('--verbose', '-v', action='count',
+        help="be verbose and print progress")
     return parser
 
 def main():
@@ -66,7 +68,8 @@ def main():
             print >>sys.stderr, "invalid detector list:", args.detectors
             sys.exit(2)
 
-    restored = modis_qir(args.granule, b6deaddets=dets).astype('f8')
+    restored = modis_qir(args.granule, b6deaddets=dets,
+            verbose=args.verbose).astype('f8')
 
     shutil.copyfile(args.granule, args.restored)
     g = modis.Level1B(args.restored, mode='w')

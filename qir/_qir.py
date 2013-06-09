@@ -13,6 +13,16 @@ PadSize = WinSize//2
 FillWinSize = 21
 NDetectors = 20
 
+def verboseprint(*args):
+    for s in args:
+        print s,
+    print
+
+def noprint(*args):
+    pass
+
+VPrint = noprint
+
 def check_globals():
     """Verify that global variable parameters are correct.
     """
@@ -211,8 +221,8 @@ def read_mod02HKM(path, b6deaddets=None):
     dayind = None
     if np.any(nightmask):
         dayind = mask_bbox(~nightmask)
-        print "Image shape:", imgshape
-        print "Day slice:", dayind
+        VPrint("Image shape:", imgshape)
+        VPrint("Day slice:", dayind)
         if np.any(nightmask[dayind]):
             raise ValueError("non-contiguous day/night")
         data = data[dayind]
@@ -228,7 +238,7 @@ def read_mod02HKM(path, b6deaddets=None):
         if len(dd[i]) == 0:
             fillmask = np.ones(img.shape, dtype='bool')
         else:
-            print "Band %s dead detectors: %s" % (band, dd[i])
+            VPrint("Band %s dead detectors: %s" % (band, dd[i]))
             fillmask = ~get_detector_mask(img.shape, dd[i])
         _img, _ = b.fill_invalid(
             img[fillmask].reshape((-1, img.shape[1])),
@@ -336,7 +346,7 @@ def set_pad(img, value):
     img[:, :PadSize] = value
     img[:, -PadSize:] = value
 
-def modis_qir(datapath, b6deaddets=None):
+def modis_qir(datapath, b6deaddets=None, verbose=0):
     """Quatitative image restoration (QIR) of MODIS band 6.
 
     Parameters
@@ -351,11 +361,15 @@ def modis_qir(datapath, b6deaddets=None):
     restored : 2d ndarray
         Image of QIR restored band 6 radiances.
     """
+    global VPrint
+    if verbose > 0:
+        VPrint = verboseprint
+
     check_globals()
     data, validrange, imgshape, dayind, dd = \
             read_mod02HKM(datapath, b6deaddets=b6deaddets)
-    print "data shape:", data.shape, data.dtype
-    print "WinSize =", WinSize
+    VPrint("data shape:", data.shape, data.dtype)
+    VPrint("WinSize =", WinSize)
     badmask = get_detector_mask(data[:,:,0].shape, dd[0])
 
     img = modis_qir_masked(data, validrange, badmask)
@@ -408,8 +422,8 @@ def modis_qir_masked(data, validrange, badmask):
     i = 0
     for rect in patches:
         rs, cs, re, ce = rect
-        print "patch %4d/%d: (%3d, %3d) @ (%4d, %4d)" % (
-                        i+1, len(patches), re-rs, ce-cs, rs, cs)
+        VPrint("patch %4d/%d: (%3d, %3d) @ (%4d, %4d)" % (
+                        i+1, len(patches), re-rs, ce-cs, rs, cs))
         crop = padded_crop(data, rect)
         tmask = np.copy(padded_crop(trainmask, rect))
         set_pad(tmask, False)
@@ -438,14 +452,14 @@ def modis_qir_masked(data, validrange, badmask):
     restored /= patchcount.astype('f8')
 
     # Handle values out of valid range in restored image
-    print "Valid range before:", validrange[0,:]
+    VPrint("Valid range before:", validrange[0,:])
     gooddata = origband[trainmask]
     std = np.std(gooddata)
     vrange = np.array([
         max(validrange[0,0], np.min(gooddata)-0.05*std),
         min(validrange[0,1], np.max(gooddata)+0.05*std),
     ])
-    print "Valid range after:", vrange
+    VPrint("Valid range after:", vrange)
     # We don't trust predicted values that are out of valid range,
     # so only fill pixels on good detector rows.
     _restored, _ = fillinvalid(restored[goodmask].reshape((-1, restored.shape[1])),
