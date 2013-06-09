@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
 import argparse
-import modis
 import numpy as np
 import os.path
 import shutil
 import sys
-from qir import modis_qir
+
+from qir._qir import modis_qir
+import qir._modis as modis
 
 def get_args():
     parser = argparse.ArgumentParser(description="""

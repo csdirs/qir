@@ -17,10 +17,8 @@ The code has been tested under at least this configuration:
 	Scipy 0.12.0
 	Pyhdf 0.8.3
 
-List of files:
-	run_qir.py - main executable script
-		(run it with -h flag for usage help)
-	qir.py - routines implementing QIR
-	modis.py - MODIS Level1B reader/writer
-	ioutils.py - misc. routines used by modis.py
-	utils.py - misc. routines
+To install, run:
+
+	python2 setup.py install
+
+A 'qir' command will be installed. Run it with -h flag for usage help.

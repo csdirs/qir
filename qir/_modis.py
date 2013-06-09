@@ -17,8 +17,8 @@ aboard the Terra (EOS AM) and Aqua (EOS PM) satellites.
 
 import numpy as np
 
-import ioutils
-import utils
+from . import _ioutils as ioutils
+from . import _utils as utils
 
 _QKM_BAND_NAMES = '1,2'.split(',')
 _HKM_BAND_NAMES = '3,4,5,6,7'.split(',')

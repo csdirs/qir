@@ -3,8 +3,8 @@
 import numpy as np
 from scipy.ndimage.filters import convolve
 
-import modis
-from utils import unpad_image, fillinvalid
+from . import _modis as modis
+from ._utils import unpad_image, fillinvalid
 
 Bands = np.array([6, 1, 3, 4, 5, 7], dtype='i') # Bands[0] will be restored
 NDestripeBins = 100
