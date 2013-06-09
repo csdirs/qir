@@ -362,7 +362,7 @@ def modis_qir(datapath, b6deaddets=None, verbose=0):
         Image of QIR restored band 6 radiances.
     """
     global VPrint
-    if verbose > 0:
+    if verbose > 1:
         VPrint = verboseprint
 
     check_globals()
