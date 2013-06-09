@@ -2,8 +2,13 @@
 
 from distutils.core import setup
 
+version = "1.0"
+
+with open("qir/__init__.py", "w") as f:
+    f.write("__version__ = \"%s\"\n" % (version,))
+
 setup(name="qir",
-        version="1.0",
+        version=version,
         description="Quatitative image restoration for MODIS 500m resolution band 6.",
         maintainer="Fazlul Shahriar",
         maintainer_email="fshahriar@gc.cuny.edu",
