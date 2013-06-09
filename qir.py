@@ -175,7 +175,7 @@ def mask_bbox(mask):
             np.min(cind) : np.max(cind)+1,
     ]
 
-def read_mod02HKM(path):
+def read_mod02HKM(path, b6deaddets=None):
     """Read 500m resolution MODIS data. The image is destriped, and then
     values out of validrange are filled.
 
@@ -183,6 +183,8 @@ def read_mod02HKM(path):
     ----------
     path : str
         Path to MODIS granule.
+    b6deaddets : list
+        List of band 6 dead detectors
 
     Returns
     -------
@@ -216,6 +218,8 @@ def read_mod02HKM(path):
         data = data[dayind]
 
     deaddet = hdf.dead_detectors()
+    if b6deaddets is not None:
+        deaddet['6'] = b6deaddets
     dd = [deaddet[str(b)] for b in Bands]
 
     for i, band in enumerate(Bands):
@@ -332,13 +336,15 @@ def set_pad(img, value):
     img[:, :PadSize] = value
     img[:, -PadSize:] = value
 
-def modis_qir(datapath):
+def modis_qir(datapath, b6deaddets=None):
     """Quatitative image restoration (QIR) of MODIS band 6.
 
     Parameters
     ----------
     datapath : str
         Path to a MODIS 500m resolution granule
+    b6deaddets : list
+        List of band 6 dead detectors
 
     Returns
     -------
@@ -346,7 +352,8 @@ def modis_qir(datapath):
         Image of QIR restored band 6 radiances.
     """
     check_globals()
-    data, validrange, imgshape, dayind, dd = read_mod02HKM(datapath)
+    data, validrange, imgshape, dayind, dd = \
+            read_mod02HKM(datapath, b6deaddets=b6deaddets)
     print "data shape:", data.shape, data.dtype
     print "WinSize =", WinSize
     badmask = get_detector_mask(data[:,:,0].shape, dd[0])
