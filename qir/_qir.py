@@ -243,7 +243,8 @@ def read_mod02HKM(path, b6deaddets=None):
         if len(dd[i]) == 0:
             fillmask = np.ones(img.shape, dtype='bool')
         else:
-            # TODO: add noisy detectors to mask
+            # TODO: investigate if noisy detector rows
+            # (Terra band 5 detector 3) should go into the mask
             VPrint("Band %s dead detectors: %s" % (band, dd[i]))
             fillmask = ~get_detector_mask(img.shape, dd[i])
         _img, _ = b.fill_invalid(
@@ -455,6 +456,7 @@ def modis_qir_masked(data, validrange, badmask):
         patchcount[rs:re, cs:ce] += np.ones_like(crop[:,:,0])
         i += 1
 
+    # TODO: gaussian weighted average should improve accuracy
     restored /= patchcount.astype('f8')
 
     # Handle values out of valid range in restored image
