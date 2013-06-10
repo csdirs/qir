@@ -46,6 +46,7 @@ def interp_nasa(img, baddets):
     img : 2d ndarray
         Input img modified in-place.
     """
+    VPrint("interp bad detectors:", baddets)
     gooddets = [d for d in xrange(NDetectors) if d not in baddets]
 
     left = -2*NDetectors + np.zeros(NDetectors)
@@ -230,14 +231,19 @@ def read_mod02HKM(path, b6deaddets=None):
     deaddet = hdf.dead_detectors()
     if b6deaddets is not None:
         deaddet['6'] = b6deaddets
+    noisydet = hdf.noisy_detectors()
     dd = [deaddet[str(b)] for b in Bands]
+    nd = [noisydet[str(b)] for b in Bands]
 
     for i, band in enumerate(Bands):
         b = hdf.radiance(band)
         img = b.destripe(data[:,:,i], nbins=NDestripeBins, skipdet=dd[i])
+        if len(nd[i]) > 0:
+            VPrint("Band %s noisy detectors: %s" % (band, nd[i]))
         if len(dd[i]) == 0:
             fillmask = np.ones(img.shape, dtype='bool')
         else:
+            # TODO: add noisy detectors to mask
             VPrint("Band %s dead detectors: %s" % (band, dd[i]))
             fillmask = ~get_detector_mask(img.shape, dd[i])
         _img, _ = b.fill_invalid(
@@ -247,8 +253,8 @@ def read_mod02HKM(path, b6deaddets=None):
             pad=True,
         )
         img[fillmask] = _img.ravel()
-        if band != 6 and len(dd[i]) > 0:
-            img = interp_nasa(img, dd[i])
+        if band != 6 and (len(dd[i]) > 0 or len(nd[i]) > 0):
+            img = interp_nasa(img, np.unique(np.concatenate([dd[i], nd[i]])))
         data[:,:,i] = img
 
     return data, validrange, imgshape, dayind, dd

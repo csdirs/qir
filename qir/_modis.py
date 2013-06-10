@@ -443,6 +443,20 @@ class Level1BBand(Level1BVariable):
         img = self.convert(img, self._param, 'raw')
         return self._super.write(img, start=start)
 
+def _get_detectors(bandnames, sd, name):
+    # Band order: 1, 2, 3, ... 12, 13lo, 13hi, 14lo, 14hi, 15, ... , 36
+    # 250m bands with 40 detectors each: 1,2
+    # 500m bands with 20 detectors each: 3,4,5,6,7
+    # The rest are 1km bands with 10 detectors each.
+    ndet = np.array([40]*2 + [20]*5 + [10]*31)
+    ind = np.concatenate(([0], np.cumsum(ndet)))
+
+    bits = np.array(getattr(sd, name))
+    dd = {}
+    for i, name in enumerate(bandnames):
+        dd[name], = np.where(bits[ind[i]:ind[i+1]] > 0)
+    return dd
+
 class Level1B(object):
     """Create an instance of Level 1B HDF product file.
 
@@ -605,18 +619,10 @@ class Level1B(object):
         }[self.resolution()]
 
     def dead_detectors(self):
-        # Band order: 1, 2, 3, ... 12, 13lo, 13hi, 14lo, 14hi, 15, ... , 36
-        # 250m bands with 40 detectors each: 1,2
-        # 500m bands with 20 detectors each: 3,4,5,6,7
-        # The rest are 1km bands with 10 detectors each.
-        ndet = np.array([40]*2 + [20]*5 + [10]*31)
-        ind = np.concatenate(([0], np.cumsum(ndet)))
+        return _get_detectors(self.band_names(), self._sd.SD, 'Dead Detector List')
 
-        bits = np.array(self._sd.SD.attributes()['Dead Detector List'])
-        dd = {}
-        for i, name in enumerate(self.band_names()):
-            dd[name], = np.where(bits[ind[i]:ind[i+1]] > 0)
-        return dd
+    def noisy_detectors(self):
+        return _get_detectors(self.band_names(), self._sd.SD, 'Noisy Detector List')
 
     def band(self, bname, param):
         """Create an instance of :class:`Level1BBand`.
