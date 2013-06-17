@@ -10,13 +10,20 @@ from qir._qir import modis_qir
 import qir._modis as modis
 
 def writerestored(origpath, b6deaddets, verbose, savedir):
+    g = modis.Level1B(origpath)
+    if g.resolution() != 500:
+        print >>sys.stderr, "not a 500m resolution granule:", origpath
+        return False
+    if len(g.dead_detectors()['6']) == 0 and b6deaddets is None:
+        print >>sys.stderr, "no band 6 dead detectors:", origpath
+        return False
     dirname, filename = os.path.split(origpath)
     if savedir is not None:
         dirname = savedir
     restpath = os.path.join(dirname, "QIR."+filename)
     if os.path.exists(restpath):
-        print >>sys.stderr, "%s already exists" % restpath
-        return
+        print >>sys.stderr, "file already exists:", restpath
+        return False
     restored = modis_qir(origpath, b6deaddets=b6deaddets,
             verbose=verbose).astype('f8')
 
@@ -30,6 +37,7 @@ def writerestored(origpath, b6deaddets, verbose, savedir):
         g.close()
     if verbose > 0:
         print "QIR of %s saved at %s" % (origpath, restpath)
+    return True
 
 def get_parser():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -98,14 +106,17 @@ def main():
     if args.nproc > 1:
         from multiprocessing import Pool
         pool = Pool(args.nproc)
-        for origpath in args.granule:
-            pool.apply_async(writerestored,
-                    [origpath, dets, args.verbose, args.dir])
+        res = [pool.apply_async(writerestored, [p, dets, args.verbose, args.dir])
+                for p in args.granule]
+        exitok = all([r.get() for r in res])
         pool.close()
         pool.join()
     else:
-        for origpath in args.granule:
-            writerestored(origpath, dets, args.verbose, args.dir)
+        exitok = all([writerestored(p, dets, args.verbose, args.dir)
+            for p in args.granule])
+    if not exitok:
+        sys.exit(1)
+    sys.exit(0)
 
 if __name__ == '__main__':
     main()
