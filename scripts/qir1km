@@ -87,9 +87,10 @@ def qir1km(pathqir, verbose, savedir, dir1km):
     if g.resolution() != 500:
         print >>sys.stderr, "not a 500m resolution granule:", pathqir
         return False
-    b6 = g.radiance(6)
+    b6 = g.raw(6)
     img = b6.read()
-    agg, aggok = aggregate(img.data, ~np.ma.getmaskarray(img) & b6.is_valid(img))
+    agg, aggok = aggregate(img.data.astype('f8'),
+            ~np.ma.getmaskarray(img) & b6.is_valid(img))
 
     shutil.copyfile(path1km, restpath)
     g = modis.Level1B(restpath, mode='w')
@@ -98,7 +99,6 @@ def qir1km(pathqir, verbose, savedir, dir1km):
         return False
     try:
         b = g.raw(6)
-        agg = b.convert(agg, 'radiance', 'raw')
         agg[~aggok] = MASK_AGG_FAIL
         # Keep the night/fill value mask from original
         fill = np.where(np.ma.getmaskarray(b.read()))
