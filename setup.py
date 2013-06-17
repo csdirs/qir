@@ -2,7 +2,7 @@
 
 from distutils.core import setup
 
-version = "1.0"
+version = "1.1"
 
 with open("qir/__init__.py", "w") as f:
     f.write("__version__ = \"%s\"\n" % (version,))
