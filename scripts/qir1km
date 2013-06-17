@@ -1,0 +1,111 @@
+#!/usr/bin/env python
+
+import argparse
+import numpy as np
+import os.path
+import shutil
+import sys
+
+import qir._modis as modis
+
+def get_parser():
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
+description="""
+Aggregate MODIS band 6 from 500m to 1km resolution. The result is
+saved as a MODIS Level 1B HDF file with the same name as the granule
+but with the prefix "QIR." added.""",
+epilog="""For example, running the following will look for the original 1km
+granule at /data/modis/MOD021KM.A2009001.0805.005.2009003114642.hdf
+and save the aggregated image at
+/data/modis/QIR.MOD021KM.A2009001.0805.005.2009003114642.hdf:
+
+    qir1km /data/modis/QIR.MOD02HKM.A2009001.0805.005.2009003114642.hdf
+""")
+    parser.add_argument('granule', nargs='*',
+        help="""500km resolution MODIS granule filename restored using QIR.""")
+    parser.add_argument('-s', metavar='DIR', dest='savedir',
+        help="""directory where the result will be saved. The default
+        is the same directory as the input granule.""")
+    parser.add_argument('--1km-dir', metavar='DIR', dest='dir1km',
+        help="""directory containing the corresponding 1km resolution granule.
+        The default is the same directory as the input granule.""")
+    parser.add_argument('--version', '-V', action='store_true',
+        help="print version and exit.")
+    parser.add_argument('--verbose', '-v', action='count',
+        help="be verbose and print progress.")
+    return parser
+
+def aggregate(img):
+    """Aggregate 500m MODIS image to 1km.
+    """
+    output = np.zeros((img.shape[0]//2, img.shape[1]//2))
+    triresp = img[:,1:-2:2] + 2*img[:,2::2] + img[:,3::2]
+    agg = triresp[::2,:] + triresp[1::2,:]
+    output[:,1:] = agg/8.0
+
+    fcol = img[:,0]*2 + img[:,1]
+    fcol_agg = fcol[::2] + fcol[1::2]
+    output[:,0] = fcol_agg/6.0
+    return output
+
+def qir1km(pathqir, verbose, savedir, dir1km):
+    g = modis.Level1B(pathqir)
+    if g.resolution() != 500:
+        print >>sys.stderr, "not a 500m resolution granule:", pathqir
+        return False
+    dirname, fname = os.path.split(pathqir)
+    if savedir is None:
+        savedir = dirname
+    if dir1km is None:
+        dir1km = dirname
+    if not fname.startswith("QIR.MOD02HKM") and not fname.startswith("QIR.MYD02HKM"):
+        print >>sys.stderr, "bad filename:", fname
+        return False
+
+    # TODO: get actual filename from CoreMetadata.0 attribute in HDF
+    # possibly using EOS Science Data Processing Toolkit (SDPTK)
+    # PGS_MET_GetPCAttr
+    path1km = os.path.join(dir1km, fname[4:9]+"1"+fname[10:])
+    restpath = os.path.join(savedir, fname[:9]+"1"+fname[10:])
+
+    g = modis.Level1B(pathqir)
+    agg = aggregate(g.radiance(6).read())
+
+    if os.path.exists(restpath):
+        print >>sys.stderr, "file already exists:", restpath
+        return False
+
+    shutil.copyfile(path1km, restpath)
+    g = modis.Level1B(restpath, mode='w')
+    try:
+        b = g.radiance(6)
+        b.write(agg)
+        b.close()
+    finally:
+        g.close()
+    if verbose > 0:
+        print "QIR of %s saved at %s" % (path1km, restpath)
+    return True
+
+def main():
+    parser = get_parser()
+    args = parser.parse_args()
+
+    if args.version:
+        from qir import __version__
+        print __version__
+        sys.exit(0)
+    if len(args.granule) == 0:
+        parser.print_help()
+        sys.exit(2)
+    if args.savedir is not None and not os.path.isdir(args.savedir):
+        os.makedirs(args.savedir)
+
+    ok = [qir1km(p, args.verbose, args.savedir, args.dir1km)
+        for p in args.granule]
+    if not all(ok):
+        sys.exit(1)
+    sys.exit(0)
+
+if __name__ == '__main__':
+    main()
