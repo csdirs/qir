@@ -49,10 +49,6 @@ def aggregate(img):
     return output
 
 def qir1km(pathqir, verbose, savedir, dir1km):
-    g = modis.Level1B(pathqir)
-    if g.resolution() != 500:
-        print >>sys.stderr, "not a 500m resolution granule:", pathqir
-        return False
     dirname, fname = os.path.split(pathqir)
     if savedir is None:
         savedir = dirname
@@ -62,21 +58,27 @@ def qir1km(pathqir, verbose, savedir, dir1km):
         print >>sys.stderr, "bad filename:", fname
         return False
 
-    # TODO: get actual filename from CoreMetadata.0 attribute in HDF
+    # TODO: maybe get actual filename from CoreMetadata.0 attribute in HDF
     # possibly using EOS Science Data Processing Toolkit (SDPTK)
     # PGS_MET_GetPCAttr
     path1km = os.path.join(dir1km, fname[4:9]+"1"+fname[10:])
     restpath = os.path.join(savedir, fname[:9]+"1"+fname[10:])
 
-    g = modis.Level1B(pathqir)
-    agg = aggregate(g.radiance(6).read())
-
     if os.path.exists(restpath):
         print >>sys.stderr, "file already exists:", restpath
         return False
 
+    g = modis.Level1B(pathqir)
+    if g.resolution() != 500:
+        print >>sys.stderr, "not a 500m resolution granule:", pathqir
+        return False
+    agg = aggregate(g.radiance(6).read())
+
     shutil.copyfile(path1km, restpath)
     g = modis.Level1B(restpath, mode='w')
+    if g.resolution() != 1000:
+        print >>sys.stderr, "not a 1km resolution granule:", path1km
+        return False
     try:
         b = g.radiance(6)
         b.write(agg)

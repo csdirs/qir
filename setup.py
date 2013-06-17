@@ -15,6 +15,6 @@ setup(name="qir",
         license="New BSD",
         url="https://bitbucket.org/fhs1/qir/overview",
         packages=["qir"],
-        scripts=["scripts/qir"],
+        scripts=["scripts/qir", "scripts/qir1km"],
         requires=["numpy", "pyhdf", "scipy"],
 )
