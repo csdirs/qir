@@ -81,7 +81,7 @@ def main():
     if args.version:
         from qir import __version__
         print __version__
-        sys.exit(2)
+        sys.exit(0)
     if len(args.granule) == 0:
         parser.print_help()
         sys.exit(2)
