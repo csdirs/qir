@@ -214,7 +214,7 @@ class Level1BVariable(object):
         return np.array(self._attributes['valid_range'])
 
     def is_invalid(self, data):
-        """Returns whether the data is within the valid range.
+        """Returns whether the data is outside the valid range.
 
         Parameters
         ----------
@@ -228,6 +228,21 @@ class Level1BVariable(object):
         """
         vr = self.valid_range()
         return (data < vr[0]) | (vr[1] < data)
+
+    def is_valid(self, data):
+        """Returns whether the data is inside the valid range.
+
+        Parameters
+        ----------
+        data : ndarray
+            The data.
+
+        Returns
+        -------
+        valid : bool ndarray
+            A pixel is True iff it is inside the valid range.
+        """
+        return ~self.is_invalid(data)
 
     def fill_invalid(self, img, winsize=11, maxinvalid=0.35, pad=True):
         """A wrapper around :func:`utils.fillinvalid`.

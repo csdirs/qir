@@ -8,6 +8,13 @@ import sys
 
 import qir._modis as modis
 
+# See Table 5.6.1 in MODIS Level 1B Product User's Guide
+# http://mcst.gsfc.nasa.gov/sites/mcst.gsfc/files/file_attachments/M1054.pdf
+MASK_DEAD_DETECTOR = 65531
+MASK_AGG_FAIL = 65528       # Aggregation algorithm failure
+MASK_FILL_VALUE = 65535
+
+
 def get_parser():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
 description="""
@@ -35,18 +42,26 @@ and save the aggregated image at
         help="be verbose and print progress.")
     return parser
 
-def aggregate(img):
-    """Aggregate 500m MODIS image to 1km.
-    """
+def aggsum(img):
     output = np.zeros((img.shape[0]//2, img.shape[1]//2))
     triresp = img[:,1:-2:2] + 2*img[:,2::2] + img[:,3::2]
     agg = triresp[::2,:] + triresp[1::2,:]
-    output[:,1:] = agg/8.0
+    output[:,1:] = agg
 
     fcol = img[:,0]*2 + img[:,1]
     fcol_agg = fcol[::2] + fcol[1::2]
-    output[:,0] = fcol_agg/6.0
+    output[:,0] = fcol_agg
     return output
+
+def aggregate(img, mask):
+    """Aggregate 500m MODIS image to 1km.
+    """
+    img[~mask] = 0
+    masksum = aggsum(mask)
+    agg = np.NaN + np.zeros(masksum.shape)
+    noz = masksum != 0
+    agg[noz] = aggsum(img)[noz]/masksum[noz]
+    return agg, noz
 
 def qir1km(pathqir, verbose, savedir, dir1km):
     dirname, fname = os.path.split(pathqir)
@@ -72,7 +87,9 @@ def qir1km(pathqir, verbose, savedir, dir1km):
     if g.resolution() != 500:
         print >>sys.stderr, "not a 500m resolution granule:", pathqir
         return False
-    agg = aggregate(g.radiance(6).read())
+    b6 = g.radiance(6)
+    img = b6.read()
+    agg, aggok = aggregate(img.data, ~np.ma.getmaskarray(img) & b6.is_valid(img))
 
     shutil.copyfile(path1km, restpath)
     g = modis.Level1B(restpath, mode='w')
@@ -80,7 +97,12 @@ def qir1km(pathqir, verbose, savedir, dir1km):
         print >>sys.stderr, "not a 1km resolution granule:", path1km
         return False
     try:
-        b = g.radiance(6)
+        b = g.raw(6)
+        agg = b.convert(agg, 'radiance', 'raw')
+        agg[~aggok] = MASK_AGG_FAIL
+        # Keep the night/fill value mask from original
+        fill = np.where(np.ma.getmaskarray(b.read()))
+        agg[fill] = MASK_FILL_VALUE
         b.write(agg)
         b.close()
     finally:
