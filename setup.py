@@ -4,7 +4,7 @@ from distutils.core import setup
 
 version = "1.1"
 
-with open("qir/__init__.py", "w") as f:
+with open("qir/_version.py", "w") as f:
     f.write("__version__ = \"%s\"\n" % (version,))
 
 setup(name="qir",
