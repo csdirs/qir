@@ -12,6 +12,7 @@ WinSize = 5
 PadSize = WinSize//2
 FillWinSize = 21
 NDetectors = 20
+Debug = False
 
 def verboseprint(*args):
     for s in args:
@@ -29,6 +30,12 @@ def check_globals():
     assert np.all((1 <= Bands) & (Bands <= 36))
     assert WinSize >= 3
     assert FillWinSize >= 1
+
+def safedivide(x, y):
+    nz = np.where(y != 0)
+    q = np.NaN + np.zeros_like(x, dtype='f8')
+    q[nz] = x[nz] / y[nz].astype('f8')
+    return q
 
 def interp_nasa(img, baddets):
     """Fill in lines from bad detectors by linear interpolation
@@ -186,6 +193,27 @@ def mask_bbox(mask):
             np.min(cind) : np.max(cind)+1,
     ]
 
+def fillgoodrows(img, vrange, goodmask, nightmask):
+    assert img.shape == goodmask.shape
+    assert img.shape == nightmask.shape
+    gimg = img[goodmask].reshape((-1, img.shape[1]))
+    gnight = nightmask[goodmask].reshape((-1, img.shape[1]))
+    ginvalid = np.isnan(gimg) | (gimg<vrange[0]) | (vrange[1]<gimg)
+    if Debug:
+        VPrint("Filling %s of %s invalid pixels" % \
+                (np.sum(~gnight & ginvalid), np.sum(ginvalid)))
+    gimg, _ = fillinvalid(gimg,
+        invalid=ginvalid,
+        validrange=vrange,
+        fillable=~gnight & ginvalid,
+        winsize=FillWinSize,
+        maxinvalid=0.5,
+        pad=True,
+    )
+    img = np.copy(img)
+    img[goodmask] = gimg.ravel()
+    return img
+
 def read_mod02HKM(path, b6deaddets=None):
     """Read 500m resolution MODIS data. The image is destriped, and then
     values out of validrange are filled.
@@ -214,7 +242,7 @@ def read_mod02HKM(path, b6deaddets=None):
     for i, band in enumerate(Bands):
         b = hdf.radiance(band)
         img = b.read()
-        data[:,:,i] = img.data
+        data[:,:,i] = img.filled()
         if np.any(img.mask):
             nightmask |= img.mask
         validrange[i,:] = b.valid_range()
@@ -224,9 +252,8 @@ def read_mod02HKM(path, b6deaddets=None):
         dayind = mask_bbox(~nightmask)
         VPrint("Image shape:", imgshape)
         VPrint("Day slice:", dayind)
-        if np.any(nightmask[dayind]):
-            raise ValueError("non-contiguous day/night")
         data = data[dayind]
+        nightmask = nightmask[dayind]
 
     deaddet = hdf.dead_detectors()
     if b6deaddets is not None:
@@ -241,24 +268,18 @@ def read_mod02HKM(path, b6deaddets=None):
         if len(nd[i]) > 0:
             VPrint("Band %s noisy detectors: %s" % (band, nd[i]))
         if len(dd[i]) == 0:
-            fillmask = np.ones(img.shape, dtype='bool')
+            goodmask = np.ones(img.shape, dtype='bool')
         else:
             # TODO: investigate if noisy detector rows
             # (Terra band 5 detector 3) should go into the mask
             VPrint("Band %s dead detectors: %s" % (band, dd[i]))
-            fillmask = ~get_detector_mask(img.shape, dd[i])
-        _img, _ = b.fill_invalid(
-            img[fillmask].reshape((-1, img.shape[1])),
-            winsize=FillWinSize,
-            maxinvalid=0.5,
-            pad=True,
-        )
-        img[fillmask] = _img.ravel()
+            goodmask = ~get_detector_mask(img.shape, dd[i])
+        img = fillgoodrows(img, b.valid_range(), goodmask, nightmask)
         if band != 6 and (len(dd[i]) > 0 or len(nd[i]) > 0):
             img = interp_nasa(img, np.unique(np.concatenate([dd[i], nd[i]])))
         data[:,:,i] = img
 
-    return data, validrange, imgshape, dayind, dd
+    return data, validrange, imgshape, dayind, dd, nightmask
 
 def argslidingwins(datashape, winsize, shiftsize):
     """Get location of sliding windows.
@@ -368,18 +389,19 @@ def modis_qir(datapath, b6deaddets=None, verbose=0):
     restored : 2d ndarray
         Image of QIR restored band 6 radiances.
     """
-    global VPrint
+    global VPrint, Debug
     if verbose > 1:
         VPrint = verboseprint
+        Debug = True
 
     check_globals()
-    data, validrange, imgshape, dayind, dd = \
+    data, validrange, imgshape, dayind, dd, nightmask = \
             read_mod02HKM(datapath, b6deaddets=b6deaddets)
     VPrint("data shape:", data.shape, data.dtype)
     VPrint("WinSize =", WinSize)
     badmask = get_detector_mask(data[:,:,0].shape, dd[0])
 
-    img = modis_qir_masked(data, validrange, badmask)
+    img = modis_qir_masked(data, validrange, badmask, nightmask)
     if dayind is not None:
         fullimg = np.ma.zeros(imgshape)
         fullimg.mask = True
@@ -387,7 +409,7 @@ def modis_qir(datapath, b6deaddets=None, verbose=0):
         img = fullimg
     return img
 
-def modis_qir_masked(data, validrange, badmask):
+def modis_qir_masked(data, validrange, badmask, nightmask):
     """
     Parameters
     ----------
@@ -457,7 +479,7 @@ def modis_qir_masked(data, validrange, badmask):
         i += 1
 
     # TODO: gaussian weighted average should improve accuracy
-    restored /= patchcount.astype('f8')
+    restored = safedivide(restored, patchcount)
 
     # Handle values out of valid range in restored image
     VPrint("Valid range before:", validrange[0,:])
@@ -470,10 +492,7 @@ def modis_qir_masked(data, validrange, badmask):
     VPrint("Valid range after:", vrange)
     # We don't trust predicted values that are out of valid range,
     # so only fill pixels on good detector rows.
-    _restored, _ = fillinvalid(restored[goodmask].reshape((-1, restored.shape[1])),
-        validrange=vrange,
-        winsize=FillWinSize, maxinvalid=0.5, pad=True)
-    restored[goodmask] = _restored.ravel()
+    restored = fillgoodrows(restored, vrange, goodmask, nightmask)
 
     # Not all invalid pixels may be filled, so return a masked array
     return np.ma.masked_where(

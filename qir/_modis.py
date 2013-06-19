@@ -357,7 +357,7 @@ class Level1BBand(Level1BVariable):
         if param == 'temperature' and self._name not in _1KM_EMISSIVE_BAND_NAMES:
             raise ValueError("Temperature units valid for bands 20-25, 27-36 only")
 
-    def convert(self, data, fromparam, toparam):
+    def _convert(self, data, fromparam, toparam):
         """Convert data from one param to another.
 
         Parameters
@@ -391,7 +391,36 @@ class Level1BBand(Level1BVariable):
                 return scale * (data - float(offset))
 
         scale, offset = self._param_scale_offset(fromparam)
-        return self.convert(data/float(scale)+offset, 'raw', toparam)
+        return self._convert(data/float(scale)+offset, 'raw', toparam)
+
+    def convert(self, data, fromparam, toparam):
+        """Convert data from one param to another.
+
+        Parameters
+        ----------
+        data : ndarray
+            Data to be converted.
+        fromparam : str
+            Param of source data.
+        toparam: str
+            Param of the data to be returned.
+
+        Returns
+        -------
+        new_data : ndarray
+            Converted data.
+        """
+        fd = data
+        if np.ma.isMaskedArray(data):
+            mask = data.mask
+            fill_value = self._convert(data.fill_value, fromparam, toparam)
+            fd = data.filled()
+
+        fd = self._convert(fd, fromparam, toparam)
+
+        if np.ma.isMaskedArray(data):
+            return np.ma.masked_array(fd, mask=mask, fill_value=fill_value)
+        return fd
 
     def valid_range(self):
         """Returns the valid range of the data.

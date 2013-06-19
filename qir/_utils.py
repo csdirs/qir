@@ -21,7 +21,7 @@ def xslidingwin(im, wsize):
         for j in xrange(nx):
             yield im[i:i+dy, j:j+dx]
 
-def fillinvalid(img, validrange=None, invalid=None, winsize=21, maxinvalid=0.5, pad=False):
+def fillinvalid(img, validrange=None, invalid=None, fillable=None, winsize=21, maxinvalid=0.5, pad=False):
     """Fill the invalid pixels in img indicated by either validrange
     or invalid. The filling is done by taking the average of the valid
     pixels in a 2D window to predict the center pixel.  The first
@@ -60,8 +60,12 @@ def fillinvalid(img, validrange=None, invalid=None, winsize=21, maxinvalid=0.5, 
         if len(validrange) != 2:
             raise ValueError("validrange has length %d" % (len(validrange),))
         invalid = (validrange[0] > img) | (img > validrange[1])
+    if fillable is None:
+        fillable = invalid.copy()
     if img.shape != invalid.shape:
         raise ValueError("img.shape %s != invalid.shape %s" % (img.shape, invalid.shape))
+    if img.shape != fillable.shape:
+        raise ValueError("img.shape %s != fillable.shape %s" % (img.shape, fillable.shape))
     if int(winsize)%2 != 1 or int(winsize) < 3:
         raise ValueError("winsize=%s must be an odd integer >= 3" % winsize)
     if 0 > maxinvalid or maxinvalid > 1:
@@ -74,11 +78,12 @@ def fillinvalid(img, validrange=None, invalid=None, winsize=21, maxinvalid=0.5, 
     if pad:
         img = pad_image(img, width=maxpad)
         invalid = pad_image(invalid, width=maxpad)
+        fillable = pad_image(fillable, width=maxpad)
     newinvalid = invalid.copy()
     newimg = img.copy()
 
     # Don't try to fill pixels near the border
-    fillable = invalid.copy()
+    fillable = fillable.copy()
     fillable[:maxpad,:], fillable[-maxpad:,:] = False, False
     fillable[:,:maxpad], fillable[:,-maxpad:] = False, False
 
