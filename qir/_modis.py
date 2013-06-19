@@ -358,22 +358,6 @@ class Level1BBand(Level1BVariable):
             raise ValueError("Temperature units valid for bands 20-25, 27-36 only")
 
     def _convert(self, data, fromparam, toparam):
-        """Convert data from one param to another.
-
-        Parameters
-        ----------
-        data : ndarray
-            Data to be converted.
-        fromparam : str
-            Param of source data.
-        toparam: str
-            Param of the data to be returned.
-
-        Returns
-        -------
-        new_data : ndarray
-            Converted data.
-        """
         self._check_param(fromparam)
         self._check_param(toparam)
         if fromparam == toparam:
