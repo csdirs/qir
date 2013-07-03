@@ -6,3 +6,4 @@ syntax: glob
 
 build/
 build.log
+qir/_version.py
