@@ -33,7 +33,7 @@ def check_globals():
 
 def safedivide(x, y):
     nz = np.where(y != 0)
-    q = np.NaN + np.zeros_like(x, dtype='f8')
+    q = np.NaN + np.zeros(x.shape, dtype='f8')
     q[nz] = x[nz] / y[nz].astype('f8')
     return q
 
